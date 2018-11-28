@@ -202,7 +202,7 @@ class bitz extends Exchange {
         ));
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $response = $this->marketGetSymbolList ();
         //
         //     {    status =>    200,
@@ -637,7 +637,7 @@ class bitz extends Exchange {
             }
         } else {
             if ($since !== null) {
-                throw new ExchangeError ($this->id . ' fetchOHLCV requires a $since argument to be supplied along with the $limit argument');
+                throw new ExchangeError ($this->id . ' fetchOHLCV requires a $limit argument if the $since argument is specified');
             }
         }
         $response = $this->marketGetKline (array_merge ($request, $params));
@@ -1037,7 +1037,7 @@ class bitz extends Exchange {
         return array ( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 
-    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body, $response = null) {
         if (gettype ($body) !== 'string')
             return; // fallback to default error handler
         if (strlen ($body) < 2)

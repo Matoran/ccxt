@@ -99,7 +99,7 @@ class therock (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         response = await self.publicGetFunds()
         #
         #     {funds: [{                     id:   "BTCEUR",
@@ -301,6 +301,16 @@ class therock (Exchange):
             'id': id,
             'fund_id': self.market_id(symbol),
         }, params))
+
+    def parse_order_status(self, status):
+        statuses = {
+            'active': 'open',
+            'executed': 'closed',
+            'deleted': 'canceled',
+            # don't know what self status means
+            # 'conditional': '?',
+        }
+        return self.safe_string(statuses, status, status)
 
     def sign(self, path, api='public', method='GET', params={}, headers=None, body=None):
         url = self.urls['api'] + '/' + self.version + '/' + self.implode_params(path, params)

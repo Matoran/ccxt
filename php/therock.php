@@ -99,7 +99,7 @@ class therock extends Exchange {
         ));
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $response = $this->publicGetFunds ();
         //
         //     { funds => array ( array (                      $id =>   "BTCEUR",
@@ -314,6 +314,17 @@ class therock extends Exchange {
             'id' => $id,
             'fund_id' => $this->market_id($symbol),
         ), $params));
+    }
+
+    public function parse_order_status ($status) {
+        $statuses = array (
+            'active' => 'open',
+            'executed' => 'closed',
+            'deleted' => 'canceled',
+            // don't know what this $status means
+            // 'conditional' => '?',
+        );
+        return $this->safe_string($statuses, $status, $status);
     }
 
     public function sign ($path, $api = 'public', $method = 'GET', $params = array (), $headers = null, $body = null) {

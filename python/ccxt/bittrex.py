@@ -183,8 +183,11 @@ class bittrex (Exchange):
                 },
                 'parseOrderStatus': False,
                 'hasAlreadyAuthenticatedSuccessfully': False,  # a workaround for APIKEY_INVALID
+                'symbolSeparator': '-',
             },
             'commonCurrencies': {
+                'BCH': 'BCHABC',
+                'BSV': 'BCHSV',
                 'BITS': 'SWIFT',
                 'CPC': 'CapriCoin',
             },
@@ -196,7 +199,7 @@ class bittrex (Exchange):
     def fee_to_precision(self, symbol, fee):
         return self.decimal_to_precision(fee, TRUNCATE, self.markets[symbol]['precision']['price'], DECIMAL_PLACES)
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         response = self.v2GetMarketsGetMarketSummaries()
         result = []
         for i in range(0, len(response['result'])):
@@ -397,19 +400,28 @@ class bittrex (Exchange):
             side = 'buy'
         elif trade['OrderType'] == 'SELL':
             side = 'sell'
-        id = None
-        if 'Id' in trade:
-            id = str(trade['Id'])
+        id = self.safe_string_2(trade, 'Id', 'ID')
+        symbol = None
+        if market is not None:
+            symbol = market['symbol']
+        cost = None
+        price = self.safe_float(trade, 'Price')
+        amount = self.safe_float(trade, 'Quantity')
+        if amount is not None:
+            if price is not None:
+                cost = price * amount
         return {
             'id': id,
             'info': trade,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'symbol': market['symbol'],
+            'symbol': symbol,
             'type': 'limit',
             'side': side,
-            'price': self.safe_float(trade, 'Price'),
-            'amount': self.safe_float(trade, 'Quantity'),
+            'price': price,
+            'amount': amount,
+            'cost': cost,
+            'fee': None,
         }
 
     def fetch_trades(self, symbol, since=None, limit=None, params={}):
@@ -595,7 +607,8 @@ class bittrex (Exchange):
         amount = self.safe_float(transaction, 'Amount')
         address = self.safe_string_2(transaction, 'CryptoAddress', 'Address')
         txid = self.safe_string(transaction, 'TxId')
-        timestamp = self.parse8601(self.safe_string(transaction, 'Opened'))
+        updated = self.parse8601(self.safe_value(transaction, 'LastUpdated'))
+        timestamp = self.parse8601(self.safe_string(transaction, 'Opened', updated))
         type = 'withdrawal' if (timestamp is not None) else 'deposit'
         code = None
         currencyId = self.safe_string(transaction, 'Currency')
@@ -630,7 +643,6 @@ class bittrex (Exchange):
                 status = 'pending'
             elif authorized and(txid is not None):
                 status = 'ok'
-        updated = self.parse8601(self.safe_value(transaction, 'LastUpdated'))
         feeCost = self.safe_float(transaction, 'TxCost')
         if feeCost is None:
             if type == 'deposit':
@@ -658,7 +670,7 @@ class bittrex (Exchange):
         }
 
     def parse_symbol(self, id):
-        quote, base = id.split('-')
+        quote, base = id.split(self.options['symbolSeparator'])
         base = self.common_currency_code(base)
         quote = self.common_currency_code(quote)
         return base + '/' + quote
@@ -851,19 +863,21 @@ class bittrex (Exchange):
                 url += '?' + self.urlencode(params)
         else:
             self.check_required_credentials()
-            nonce = self.nonce()
             url += api + '/'
             if ((api == 'account') and(path != 'withdraw')) or (path == 'openorders'):
                 url += method.lower()
-            url += path + '?' + self.urlencode(self.extend({
-                'nonce': nonce,
+            request = {
                 'apikey': self.apiKey,
-            }, params))
+            }
+            disableNonce = self.safe_value(self.options, 'disableNonce')
+            if (disableNonce is None) or not disableNonce:
+                request['nonce'] = self.nonce()
+            url += path + '?' + self.urlencode(self.extend(request, params))
             signature = self.hmac(self.encode(url), self.encode(self.secret), hashlib.sha512)
             headers = {'apisign': signature}
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         if body[0] == '{':
             response = json.loads(body)
             # {success: False, message: "message"}

@@ -163,8 +163,11 @@ class bittrex extends Exchange {
                 ),
                 'parseOrderStatus' => false,
                 'hasAlreadyAuthenticatedSuccessfully' => false, // a workaround for APIKEY_INVALID
+                'symbolSeparator' => '-',
             ),
             'commonCurrencies' => array (
+                'BCH' => 'BCHABC',
+                'BSV' => 'BCHSV',
                 'BITS' => 'SWIFT',
                 'CPC' => 'CapriCoin',
             ),
@@ -179,7 +182,7 @@ class bittrex extends Exchange {
         return $this->decimal_to_precision($fee, TRUNCATE, $this->markets[$symbol]['precision']['price'], DECIMAL_PLACES);
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $response = $this->v2GetMarketsGetMarketSummaries ();
         $result = array ();
         for ($i = 0; $i < count ($response['result']); $i++) {
@@ -398,19 +401,30 @@ class bittrex extends Exchange {
         } else if ($trade['OrderType'] === 'SELL') {
             $side = 'sell';
         }
-        $id = null;
-        if (is_array ($trade) && array_key_exists ('Id', $trade))
-            $id = (string) $trade['Id'];
+        $id = $this->safe_string_2($trade, 'Id', 'ID');
+        $symbol = null;
+        if ($market !== null)
+            $symbol = $market['symbol'];
+        $cost = null;
+        $price = $this->safe_float($trade, 'Price');
+        $amount = $this->safe_float($trade, 'Quantity');
+        if ($amount !== null) {
+            if ($price !== null) {
+                $cost = $price * $amount;
+            }
+        }
         return array (
             'id' => $id,
             'info' => $trade,
             'timestamp' => $timestamp,
             'datetime' => $this->iso8601 ($timestamp),
-            'symbol' => $market['symbol'],
+            'symbol' => $symbol,
             'type' => 'limit',
             'side' => $side,
-            'price' => $this->safe_float($trade, 'Price'),
-            'amount' => $this->safe_float($trade, 'Quantity'),
+            'price' => $price,
+            'amount' => $amount,
+            'cost' => $cost,
+            'fee' => null,
         );
     }
 
@@ -611,7 +625,8 @@ class bittrex extends Exchange {
         $amount = $this->safe_float($transaction, 'Amount');
         $address = $this->safe_string_2($transaction, 'CryptoAddress', 'Address');
         $txid = $this->safe_string($transaction, 'TxId');
-        $timestamp = $this->parse8601 ($this->safe_string($transaction, 'Opened'));
+        $updated = $this->parse8601 ($this->safe_value($transaction, 'LastUpdated'));
+        $timestamp = $this->parse8601 ($this->safe_string($transaction, 'Opened', $updated));
         $type = ($timestamp !== null) ? 'withdrawal' : 'deposit';
         $code = null;
         $currencyId = $this->safe_string($transaction, 'Currency');
@@ -650,7 +665,6 @@ class bittrex extends Exchange {
                 $status = 'ok';
             }
         }
-        $updated = $this->parse8601 ($this->safe_value($transaction, 'LastUpdated'));
         $feeCost = $this->safe_float($transaction, 'TxCost');
         if ($feeCost === null) {
             if ($type === 'deposit') {
@@ -681,7 +695,7 @@ class bittrex extends Exchange {
     }
 
     public function parse_symbol ($id) {
-        list ($quote, $base) = explode ('-', $id);
+        list ($quote, $base) = explode ($this->options['symbolSeparator'], $id);
         $base = $this->common_currency_code($base);
         $quote = $this->common_currency_code($quote);
         return $base . '/' . $quote;
@@ -897,30 +911,34 @@ class bittrex extends Exchange {
                 $url .= '?' . $this->urlencode ($params);
         } else {
             $this->check_required_credentials();
-            $nonce = $this->nonce ();
             $url .= $api . '/';
             if ((($api === 'account') && ($path !== 'withdraw')) || ($path === 'openorders'))
                 $url .= strtolower ($method);
-            $url .= $path . '?' . $this->urlencode (array_merge (array (
-                'nonce' => $nonce,
+            $request = array (
                 'apikey' => $this->apiKey,
-            ), $params));
+            );
+            $disableNonce = $this->safe_value($this->options, 'disableNonce');
+            if (($disableNonce === null) || !$disableNonce) {
+                $request['nonce'] = $this->nonce ();
+            }
+            $url .= $path . '?' . $this->urlencode (array_merge ($request, $params));
             $signature = $this->hmac ($this->encode ($url), $this->encode ($this->secret), 'sha512');
             $headers = array ( 'apisign' => $signature );
         }
         return array ( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 
-    public function handle_errors ($code, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($code, $reason, $url, $method, $headers, $body, $response = null) {
         if ($body[0] === '{') {
             $response = json_decode ($body, $as_associative_array = true);
             // array ( $success => false, $message => "$message" )
             $success = $this->safe_value($response, 'success');
             if ($success === null)
                 throw new ExchangeError ($this->id . ' => malformed $response => ' . $this->json ($response));
-            if (gettype ($success) === 'string')
+            if (gettype ($success) === 'string') {
                 // bleutrade uses string instead of boolean
                 $success = ($success === 'true') ? true : false;
+            }
             if (!$success) {
                 $message = $this->safe_string($response, 'message');
                 $feedback = $this->id . ' ' . $this->json ($response);

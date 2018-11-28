@@ -135,6 +135,7 @@ class bitmex extends Exchange {
                 'exact' => array (
                     'Invalid API Key.' => '\\ccxt\\AuthenticationError',
                     'Access Denied' => '\\ccxt\\PermissionDenied',
+                    'Duplicate clOrdID' => '\\ccxt\\InvalidOrder',
                 ),
                 'broad' => array (
                     'overloaded' => '\\ccxt\\ExchangeNotAvailable',
@@ -146,7 +147,7 @@ class bitmex extends Exchange {
         ));
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $markets = $this->publicGetInstrumentActiveAndIndices ();
         $result = array ();
         for ($p = 0; $p < count ($markets); $p++) {
@@ -576,23 +577,27 @@ class bitmex extends Exchange {
         );
     }
 
-    public function handle_errors ($code, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($code, $reason, $url, $method, $headers, $body, $response = null) {
         if ($code === 429)
             throw new DDoSProtection ($this->id . ' ' . $body);
         if ($code >= 400) {
             if ($body) {
                 if ($body[0] === '{') {
                     $response = json_decode ($body, $as_associative_array = true);
-                    $message = $this->safe_string($response, 'error');
+                    $error = $this->safe_value($response, 'error', array ());
+                    $message = $this->safe_string($error, 'message');
                     $feedback = $this->id . ' ' . $body;
                     $exact = $this->exceptions['exact'];
-                    if (is_array ($exact) && array_key_exists ($code, $exact)) {
-                        throw new $exact[$code] ($feedback);
+                    if (is_array ($exact) && array_key_exists ($message, $exact)) {
+                        throw new $exact[$message] ($feedback);
                     }
                     $broad = $this->exceptions['broad'];
                     $broadKey = $this->findBroadlyMatchedKey ($broad, $message);
                     if ($broadKey !== null) {
                         throw new $broad[$broadKey] ($feedback);
+                    }
+                    if ($code === 400) {
+                        throw new BadRequest ($feedback);
                     }
                     throw new ExchangeError ($feedback); // unknown $message
                 }

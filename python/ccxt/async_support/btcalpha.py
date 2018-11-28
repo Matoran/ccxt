@@ -117,7 +117,7 @@ class btcalpha (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         markets = await self.publicGetPairs()
         result = []
         for i in range(0, len(markets)):
@@ -250,21 +250,26 @@ class btcalpha (Exchange):
             }
         return self.parse_balance(result)
 
+    def parse_order_status(self, status):
+        statuses = {
+            '1': 'open',
+            '2': 'canceled',
+            '3': 'closed',
+        }
+        return self.safe_string(statuses, status, status)
+
     def parse_order(self, order, market=None):
         symbol = None
         if not market:
             market = self.safe_value(self.marketsById, order['pair'])
         if market:
             symbol = market['symbol']
-        timestamp = int(order['date'] * 1000)
+        timestamp = self.safe_integer(order, 'date')
+        if timestamp is not None:
+            timestamp *= 1000
         price = float(order['price'])
         amount = self.safe_float(order, 'amount')
-        status = self.safe_string(order, 'status')
-        statuses = {
-            '1': 'open',
-            '2': 'canceled',
-            '3': 'closed',
-        }
+        status = self.parse_order_status(self.safe_string(order, 'status'))
         id = self.safe_string(order, 'oid')
         if not id:
             id = self.safe_string(order, 'id')
@@ -276,7 +281,7 @@ class btcalpha (Exchange):
             'id': id,
             'datetime': self.iso8601(timestamp),
             'timestamp': timestamp,
-            'status': self.safe_string(statuses, status),
+            'status': status,
             'symbol': symbol,
             'type': 'limit',
             'side': side,
@@ -378,7 +383,7 @@ class btcalpha (Exchange):
             headers['X-NONCE'] = str(self.nonce())
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         if code < 400:
             return
         if not isinstance(body, basestring):

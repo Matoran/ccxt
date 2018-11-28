@@ -243,8 +243,18 @@ class exmo extends Exchange {
         for ($i = 0; $i < count ($items); $i++) {
             $item = $items[$i];
             $code = $this->common_currency_code($this->safe_string($item, 'prov'));
-            $withdraw[$code] = $this->parse_fixed_float_value ($this->safe_string($item, 'wd'));
-            $deposit[$code] = $this->parse_fixed_float_value ($this->safe_string($item, 'dep'));
+            $withdrawalFee = $this->safe_string($item, 'wd');
+            $depositFee = $this->safe_string($item, 'dep');
+            if ($withdrawalFee !== null) {
+                if (strlen ($withdrawalFee) > 0) {
+                    $withdraw[$code] = $this->parse_fixed_float_value ($withdrawalFee);
+                }
+            }
+            if ($depositFee !== null) {
+                if (strlen ($depositFee) > 0) {
+                    $deposit[$code] = $this->parse_fixed_float_value ($depositFee);
+                }
+            }
         }
         $result = array (
             'info' => $response,
@@ -320,7 +330,7 @@ class exmo extends Exchange {
         return $result;
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $fees = $this->fetch_trading_fees();
         $markets = $this->publicGetPairSettings ();
         $keys = is_array ($markets) ? array_keys ($markets) : array ();
@@ -1011,7 +1021,7 @@ class exmo extends Exchange {
         return $this->milliseconds ();
     }
 
-    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body, $response = null) {
         if (gettype ($body) !== 'string')
             return; // fallback to default error handler
         if (strlen ($body) < 2)

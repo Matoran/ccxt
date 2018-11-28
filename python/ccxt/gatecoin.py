@@ -222,7 +222,7 @@ class gatecoin (Exchange):
             },
         })
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         response = self.publicGetReferenceCurrencyPairs()
         markets = response['currencyPairs']
         result = []
@@ -311,7 +311,9 @@ class gatecoin (Exchange):
             symbol = market['symbol']
         baseVolume = self.safe_float(ticker, 'volume')
         vwap = self.safe_float(ticker, 'vwap')
-        quoteVolume = baseVolume * vwap
+        quoteVolume = None
+        if baseVolume is not None and vwap is not None:
+            quoteVolume = baseVolume * vwap
         last = self.safe_float(ticker, 'last')
         return {
             'symbol': symbol,
@@ -616,6 +618,7 @@ class gatecoin (Exchange):
         return {
             'currency': code,
             'address': address,
+            'tag': None,
             'info': response,
         }
 
@@ -631,6 +634,7 @@ class gatecoin (Exchange):
         return {
             'currency': code,
             'address': address,
+            'tag': None,
             'info': response,
         }
 
@@ -646,7 +650,7 @@ class gatecoin (Exchange):
         # not unified yet
         return self.privatePostElectronicWalletUserWalletsDigiCurrency(self.extend(request, params))
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:

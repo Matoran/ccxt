@@ -12,6 +12,7 @@ from ccxt.base.errors import ArgumentsRequired
 from ccxt.base.errors import InsufficientFunds
 from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
+from ccxt.base.errors import DDoSProtection
 from ccxt.base.errors import InvalidNonce
 
 
@@ -92,6 +93,7 @@ class liquid (Exchange):
             },
             'skipJsonOnStatusCodes': [401],
             'exceptions': {
+                'API rate limit exceeded. Please retry after 300s': DDoSProtection,
                 'API Authentication failed': AuthenticationError,
                 'Nonce is too small': InvalidNonce,
                 'Order not found': OrderNotFound,
@@ -168,7 +170,7 @@ class liquid (Exchange):
             }
         return result
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         markets = self.publicGetProducts()
         #
         #     [
@@ -607,6 +609,8 @@ class liquid (Exchange):
                 raise exceptions[body](self.id + ' ' + body)
             else:
                 return
+        if code == 429:
+            raise DDoSProtection(self.id + ' ' + body)
         if not self.is_json_encoded_object(body):
             return  # fallback to default error handler
         if response is None:

@@ -250,8 +250,14 @@ class exmo (Exchange):
         for i in range(0, len(items)):
             item = items[i]
             code = self.common_currency_code(self.safe_string(item, 'prov'))
-            withdraw[code] = self.parse_fixed_float_value(self.safe_string(item, 'wd'))
-            deposit[code] = self.parse_fixed_float_value(self.safe_string(item, 'dep'))
+            withdrawalFee = self.safe_string(item, 'wd')
+            depositFee = self.safe_string(item, 'dep')
+            if withdrawalFee is not None:
+                if len(withdrawalFee) > 0:
+                    withdraw[code] = self.parse_fixed_float_value(withdrawalFee)
+            if depositFee is not None:
+                if len(depositFee) > 0:
+                    deposit[code] = self.parse_fixed_float_value(depositFee)
         result = {
             'info': response,
             'withdraw': withdraw,
@@ -322,7 +328,7 @@ class exmo (Exchange):
             }
         return result
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         fees = self.fetch_trading_fees()
         markets = self.publicGetPairSettings()
         keys = list(markets.keys())
@@ -933,7 +939,7 @@ class exmo (Exchange):
     def nonce(self):
         return self.milliseconds()
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:
