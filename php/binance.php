@@ -96,7 +96,6 @@ class binance extends Exchange {
                 ),
                 'public' => array (
                     'get' => array (
-                        'exchangeInfo',
                         'ping',
                         'time',
                         'depth',
@@ -300,7 +299,7 @@ class binance extends Exchange {
         return $this->options['timeDifference'];
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $response = $this->publicGetExchangeInfo ();
         if ($this->options['adjustForTimeDifference'])
             $this->load_time_difference ();
@@ -378,17 +377,20 @@ class binance extends Exchange {
         $market = $this->markets[$symbol];
         $key = 'quote';
         $rate = $market[$takerOrMaker];
-        $cost = floatval ($this->cost_to_precision($symbol, $amount * $rate));
+        $cost = $amount * $rate;
+        $precision = $market['precision']['price'];
         if ($side === 'sell') {
             $cost *= $price;
         } else {
             $key = 'base';
+            $precision = $market['precision']['amount'];
         }
+        $cost = $this->decimal_to_precision($cost, ROUND, $precision, $this->precisionMode);
         return array (
             'type' => $takerOrMaker,
             'currency' => $market[$key],
             'rate' => $rate,
-            'cost' => floatval ($this->fee_to_precision($symbol, $cost)),
+            'cost' => floatval ($cost),
         );
     }
 
@@ -1130,7 +1132,7 @@ class binance extends Exchange {
         return array ( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 
-    public function handle_errors ($code, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($code, $reason, $url, $method, $headers, $body, $response = null) {
         if (($code === 418) || ($code === 429))
             throw new DDoSProtection ($this->id . ' ' . (string) $code . ' ' . $reason . ' ' . $body);
         // $error $response in a form => array ( "$code" => -1013, "msg" => "Invalid quantity." )

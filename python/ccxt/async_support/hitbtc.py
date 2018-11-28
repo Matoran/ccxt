@@ -495,6 +495,7 @@ class hitbtc (Exchange):
                 'DRK': 'DASH',
                 'EMGO': 'MGO',
                 'GET': 'Themis',
+                'HSR': 'HC',
                 'LNC': 'LinkerCoin',
                 'UNC': 'Unigame',
                 'USD': 'USDT',
@@ -505,7 +506,7 @@ class hitbtc (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         markets = await self.publicGetSymbols()
         result = []
         for p in range(0, len(markets['symbols'])):

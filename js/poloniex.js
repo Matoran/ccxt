@@ -227,7 +227,7 @@ module.exports = class poloniex extends Exchange {
         return this.parseOHLCVs (response, market, timeframe, since, limit);
     }
 
-    async fetchMarkets () {
+    async fetchMarkets (params = {}) {
         let markets = await this.publicGetReturnTicker ();
         let keys = Object.keys (markets);
         let result = [];
@@ -398,7 +398,7 @@ module.exports = class poloniex extends Exchange {
             let symbol = undefined;
             let market = undefined;
             if (id in this.markets_by_id) {
-                let market = this.markets_by_id[id];
+                market = this.markets_by_id[id];
                 symbol = market['symbol'];
             } else {
                 let [ quoteId, baseId ] = id.split ('_');
@@ -1107,8 +1107,7 @@ module.exports = class poloniex extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (code, reason, url, method, headers, body) {
-        let response = undefined;
+    handleErrors (code, reason, url, method, headers, body, response = undefined) {
         try {
             response = JSON.parse (body);
         } catch (e) {

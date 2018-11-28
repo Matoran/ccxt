@@ -16,7 +16,9 @@ import json
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
+from ccxt.base.errors import OrderNotFound
 from ccxt.base.errors import NotSupported
+from ccxt.base.errors import InvalidNonce
 
 
 class bitstamp (Exchange):
@@ -35,6 +37,7 @@ class bitstamp (Exchange):
                 'fetchOpenOrders': True,
                 'fetchMyTrades': True,
                 'fetchTransactions': True,
+                'fetchWithdrawals': True,
                 'withdraw': True,
             },
             'urls': {
@@ -160,10 +163,19 @@ class bitstamp (Exchange):
             },
             'exceptions': {
                 'No permission found': PermissionDenied,
+                'API key not found': AuthenticationError,
+                'IP address not allowed': PermissionDenied,
+                'Invalid nonce': InvalidNonce,
+                'Invalid signature': AuthenticationError,
+                'Authentication failed': AuthenticationError,
+                'Missing key, signature and nonce parameters': AuthenticationError,
+                'Your account is frozen': PermissionDenied,
+                'Please update your profile with your FATCA information, before using API.': PermissionDenied,
+                'Order not found': OrderNotFound,
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         markets = await self.publicGetTradingPairsInfo()
         result = []
         for i in range(0, len(markets)):
@@ -226,7 +238,9 @@ class bitstamp (Exchange):
         timestamp = int(ticker['timestamp']) * 1000
         vwap = self.safe_float(ticker, 'vwap')
         baseVolume = self.safe_float(ticker, 'volume')
-        quoteVolume = baseVolume * vwap
+        quoteVolume = None
+        if baseVolume is not None and vwap is not None:
+            quoteVolume = baseVolume * vwap
         last = self.safe_float(ticker, 'last')
         return {
             'symbol': symbol,
@@ -265,11 +279,14 @@ class bitstamp (Exchange):
         #         "eur": 0.0
         #     }
         #
+        if 'currency' in transaction:
+            return transaction['currency'].lower()
         transaction = self.omit(transaction, [
             'fee',
             'price',
             'datetime',
             'type',
+            'status',
             'id',
         ])
         ids = list(transaction.keys())
@@ -501,7 +518,41 @@ class bitstamp (Exchange):
         transactions = self.filter_by_array(response, 'type', ['0', '1'], False)
         return self.parseTransactions(transactions, currency, since, limit)
 
+    async def fetch_withdrawals(self, code=None, since=None, limit=None, params={}):
+        await self.load_markets()
+        request = {}
+        if since is not None:
+            request['timedelta'] = self.milliseconds() - since
+        response = await self.privatePostWithdrawalRequests(self.extend(request, params))
+        #
+        #     [
+        #         {
+        #             status: 2,
+        #             datetime: '2018-10-17 10:58:13',
+        #             currency: 'BTC',
+        #             amount: '0.29669259',
+        #             address: 'aaaaa',
+        #             type: 1,
+        #             id: 111111,
+        #             transaction_id: 'xxxx',
+        #         },
+        #         {
+        #             status: 2,
+        #             datetime: '2018-10-17 10:55:17',
+        #             currency: 'ETH',
+        #             amount: '1.11010664',
+        #             address: 'aaaa',
+        #             type: 16,
+        #             id: 222222,
+        #             transaction_id: 'xxxxx',
+        #         },
+        #     ]
+        #
+        return self.parseTransactions(response, None, since, limit)
+
     def parse_transaction(self, transaction, currency=None):
+        #
+        # fetchTransactions
         #
         #     {
         #         "fee": "0.00000000",
@@ -513,7 +564,20 @@ class bitstamp (Exchange):
         #         "type": "1",
         #         "xrp": "-20.00000000",
         #         "eur": 0,
-        #     },
+        #     }
+        #
+        # fetchWithdrawals
+        #
+        #     {
+        #         status: 2,
+        #         datetime: '2018-10-17 10:58:13',
+        #         currency: 'BTC',
+        #         amount: '0.29669259',
+        #         address: 'aaaaa',
+        #         type: 1,
+        #         id: 111111,
+        #         transaction_id: 'xxxx',
+        #     }
         #
         timestamp = self.parse8601(self.safe_string(transaction, 'datetime'))
         code = None
@@ -537,23 +601,30 @@ class bitstamp (Exchange):
         if amount is not None:
             # withdrawals have a negative amount
             amount = abs(amount)
+        status = self.parse_transaction_status_by_type(self.safe_string(transaction, 'status'))
         type = self.safe_string(transaction, 'type')
-        if type == '0':
-            type = 'deposit'
-        elif type == '1':
+        if status is None:
+            if type == '0':
+                type = 'deposit'
+            elif type == '1':
+                type = 'withdrawal'
+        else:
             type = 'withdrawal'
+        txid = self.safe_string(transaction, 'transaction_id')
+        address = self.safe_string(transaction, 'address')
+        tag = None  # not documented
         return {
             'info': transaction,
             'id': id,
-            'txid': None,  # ?
+            'txid': txid,
             'timestamp': timestamp,
             'datetime': self.iso8601(timestamp),
-            'address': None,
-            'tag': None,
+            'address': address,
+            'tag': tag,
             'type': type,
             'amount': amount,
             'currency': code,
-            'status': None,
+            'status': status,
             'updated': None,
             'fee': {
                 'currency': feeCurrency,
@@ -561,6 +632,18 @@ class bitstamp (Exchange):
                 'rate': None,
             },
         }
+
+    def parse_transaction_status_by_type(self, status):
+        # withdrawals:
+        # 0(open), 1(in process), 2(finished), 3(canceled) or 4(failed).
+        statuses = {
+            '0': 'pending',  # Open
+            '1': 'pending',  # In process
+            '2': 'ok',  # Finished
+            '3': 'canceled',  # Canceled
+            '4': 'failed',  # Failed
+        }
+        return self.safe_string(statuses, status, status)
 
     def parse_order(self, order, market=None):
         id = self.safe_string(order, 'id')
@@ -726,7 +809,7 @@ class bitstamp (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:

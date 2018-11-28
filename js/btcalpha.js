@@ -105,7 +105,7 @@ module.exports = class btcalpha extends Exchange {
         });
     }
 
-    async fetchMarkets () {
+    async fetchMarkets (params = {}) {
         let markets = await this.publicGetPairs ();
         let result = [];
         for (let i = 0; i < markets.length; i++) {
@@ -251,21 +251,28 @@ module.exports = class btcalpha extends Exchange {
         return this.parseBalance (result);
     }
 
+    parseOrderStatus (status) {
+        const statuses = {
+            '1': 'open',
+            '2': 'canceled',
+            '3': 'closed',
+        };
+        return this.safeString (statuses, status, status);
+    }
+
     parseOrder (order, market = undefined) {
         let symbol = undefined;
         if (!market)
             market = this.safeValue (this.marketsById, order['pair']);
         if (market)
             symbol = market['symbol'];
-        let timestamp = parseInt (order['date'] * 1000);
+        let timestamp = this.safeInteger (order, 'date');
+        if (timestamp !== undefined) {
+            timestamp *= 1000;
+        }
         let price = parseFloat (order['price']);
         let amount = this.safeFloat (order, 'amount');
-        let status = this.safeString (order, 'status');
-        let statuses = {
-            '1': 'open',
-            '2': 'canceled',
-            '3': 'closed',
-        };
+        let status = this.parseOrderStatus (this.safeString (order, 'status'));
         let id = this.safeString (order, 'oid');
         if (!id)
             id = this.safeString (order, 'id');
@@ -277,7 +284,7 @@ module.exports = class btcalpha extends Exchange {
             'id': id,
             'datetime': this.iso8601 (timestamp),
             'timestamp': timestamp,
-            'status': this.safeString (statuses, status),
+            'status': status,
             'symbol': symbol,
             'type': 'limit',
             'side': side,
@@ -394,7 +401,7 @@ module.exports = class btcalpha extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (code, reason, url, method, headers, body) {
+    handleErrors (code, reason, url, method, headers, body, response = undefined) {
         if (code < 400)
             return;
         if (typeof body !== 'string')
@@ -402,7 +409,7 @@ module.exports = class btcalpha extends Exchange {
         if (body.length < 2)
             return; // fallback to default error handler
         if ((body[0] === '{') || (body[0] === '[')) {
-            let response = JSON.parse (body);
+            response = JSON.parse (body);
             let message = this.id + ' ' + this.safeValue (response, 'detail', body);
             if (code === 401 || code === 403) {
                 throw new AuthenticationError (message);

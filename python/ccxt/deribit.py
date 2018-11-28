@@ -83,7 +83,7 @@ class deribit (Exchange):
             },
         })
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         marketsResponse = self.publicGetGetinstruments()
         markets = marketsResponse['result']
         result = []
@@ -136,7 +136,7 @@ class deribit (Exchange):
         return {
             'currency': 'BTC',
             'address': account['depositAddress'],
-            'status': 'ok',
+            'tag': None,
             'info': account,
         }
 

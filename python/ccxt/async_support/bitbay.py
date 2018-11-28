@@ -185,7 +185,9 @@ class bitbay (Exchange):
         timestamp = self.milliseconds()
         baseVolume = self.safe_float(ticker, 'volume')
         vwap = self.safe_float(ticker, 'vwap')
-        quoteVolume = baseVolume * vwap
+        quoteVolume = None
+        if baseVolume is not None and vwap is not None:
+            quoteVolume = baseVolume * vwap
         last = self.safe_float(ticker, 'last')
         return {
             'symbol': symbol,
@@ -300,7 +302,7 @@ class bitbay (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:

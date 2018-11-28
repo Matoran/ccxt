@@ -137,7 +137,7 @@ class cointiger (huobipro):
             },
         })
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         response = self.v2publicGetCurrencys()
         #
         #     {
@@ -401,6 +401,16 @@ class cointiger (huobipro):
             'limit': limit,
         }, params))
         return self.parse_trades(response['data']['list'], market, since, limit)
+
+    def parse_ohlcv(self, ohlcv, market=None, timeframe='1m', since=None, limit=None):
+        return [
+            ohlcv['id'] * 1000,
+            ohlcv['open'],
+            ohlcv['high'],
+            ohlcv['low'],
+            ohlcv['close'],
+            ohlcv['vol'],
+        ]
 
     def fetch_ohlcv(self, symbol, timeframe='1m', since=None, limit=1000, params={}):
         self.load_markets()
@@ -809,7 +819,7 @@ class cointiger (huobipro):
                 url += '?' + self.urlencode(params)
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:

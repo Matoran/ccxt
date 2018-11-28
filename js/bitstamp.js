@@ -3,7 +3,7 @@
 //  ---------------------------------------------------------------------------
 
 const Exchange = require ('./base/Exchange');
-const { AuthenticationError, ExchangeError, NotSupported, PermissionDenied } = require ('./base/errors');
+const { AuthenticationError, ExchangeError, NotSupported, PermissionDenied, InvalidNonce, OrderNotFound } = require ('./base/errors');
 
 //  ---------------------------------------------------------------------------
 
@@ -22,6 +22,7 @@ module.exports = class bitstamp extends Exchange {
                 'fetchOpenOrders': true,
                 'fetchMyTrades': true,
                 'fetchTransactions': true,
+                'fetchWithdrawals': true,
                 'withdraw': true,
             },
             'urls': {
@@ -147,11 +148,20 @@ module.exports = class bitstamp extends Exchange {
             },
             'exceptions': {
                 'No permission found': PermissionDenied,
+                'API key not found': AuthenticationError,
+                'IP address not allowed': PermissionDenied,
+                'Invalid nonce': InvalidNonce,
+                'Invalid signature': AuthenticationError,
+                'Authentication failed': AuthenticationError,
+                'Missing key, signature and nonce parameters': AuthenticationError,
+                'Your account is frozen': PermissionDenied,
+                'Please update your profile with your FATCA information, before using API.': PermissionDenied,
+                'Order not found': OrderNotFound,
             },
         });
     }
 
-    async fetchMarkets () {
+    async fetchMarkets (params = {}) {
         let markets = await this.publicGetTradingPairsInfo ();
         let result = [];
         for (let i = 0; i < markets.length; i++) {
@@ -217,7 +227,9 @@ module.exports = class bitstamp extends Exchange {
         let timestamp = parseInt (ticker['timestamp']) * 1000;
         let vwap = this.safeFloat (ticker, 'vwap');
         let baseVolume = this.safeFloat (ticker, 'volume');
-        let quoteVolume = baseVolume * vwap;
+        let quoteVolume = undefined;
+        if (baseVolume !== undefined && vwap !== undefined)
+            quoteVolume = baseVolume * vwap;
         let last = this.safeFloat (ticker, 'last');
         return {
             'symbol': symbol,
@@ -257,11 +269,15 @@ module.exports = class bitstamp extends Exchange {
         //         "eur": 0.0
         //     }
         //
+        if ('currency' in transaction) {
+            return transaction['currency'].toLowerCase ();
+        }
         transaction = this.omit (transaction, [
             'fee',
             'price',
             'datetime',
             'type',
+            'status',
             'id',
         ]);
         let ids = Object.keys (transaction);
@@ -530,7 +546,43 @@ module.exports = class bitstamp extends Exchange {
         return this.parseTransactions (transactions, currency, since, limit);
     }
 
+    async fetchWithdrawals (code = undefined, since = undefined, limit = undefined, params = {}) {
+        await this.loadMarkets ();
+        let request = {};
+        if (since !== undefined) {
+            request['timedelta'] = this.milliseconds () - since;
+        }
+        let response = await this.privatePostWithdrawalRequests (this.extend (request, params));
+        //
+        //     [
+        //         {
+        //             status: 2,
+        //             datetime: '2018-10-17 10:58:13',
+        //             currency: 'BTC',
+        //             amount: '0.29669259',
+        //             address: 'aaaaa',
+        //             type: 1,
+        //             id: 111111,
+        //             transaction_id: 'xxxx',
+        //         },
+        //         {
+        //             status: 2,
+        //             datetime: '2018-10-17 10:55:17',
+        //             currency: 'ETH',
+        //             amount: '1.11010664',
+        //             address: 'aaaa',
+        //             type: 16,
+        //             id: 222222,
+        //             transaction_id: 'xxxxx',
+        //         },
+        //     ]
+        //
+        return this.parseTransactions (response, undefined, since, limit);
+    }
+
     parseTransaction (transaction, currency = undefined) {
+        //
+        // fetchTransactions
         //
         //     {
         //         "fee": "0.00000000",
@@ -542,7 +594,20 @@ module.exports = class bitstamp extends Exchange {
         //         "type": "1",
         //         "xrp": "-20.00000000",
         //         "eur": 0,
-        //     },
+        //     }
+        //
+        // fetchWithdrawals
+        //
+        //     {
+        //         status: 2,
+        //         datetime: '2018-10-17 10:58:13',
+        //         currency: 'BTC',
+        //         amount: '0.29669259',
+        //         address: 'aaaaa',
+        //         type: 1,
+        //         id: 111111,
+        //         transaction_id: 'xxxx',
+        //     }
         //
         let timestamp = this.parse8601 (this.safeString (transaction, 'datetime'));
         let code = undefined;
@@ -569,24 +634,32 @@ module.exports = class bitstamp extends Exchange {
             // withdrawals have a negative amount
             amount = Math.abs (amount);
         }
+        let status = this.parseTransactionStatusByType (this.safeString (transaction, 'status'));
         let type = this.safeString (transaction, 'type');
-        if (type === '0') {
-            type = 'deposit';
-        } else if (type === '1') {
+        if (status === undefined) {
+            if (type === '0') {
+                type = 'deposit';
+            } else if (type === '1') {
+                type = 'withdrawal';
+            }
+        } else {
             type = 'withdrawal';
         }
+        let txid = this.safeString (transaction, 'transaction_id');
+        let address = this.safeString (transaction, 'address');
+        let tag = undefined; // not documented
         return {
             'info': transaction,
             'id': id,
-            'txid': undefined, // ?
+            'txid': txid,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
-            'address': undefined,
-            'tag': undefined,
+            'address': address,
+            'tag': tag,
             'type': type,
             'amount': amount,
             'currency': code,
-            'status': undefined,
+            'status': status,
             'updated': undefined,
             'fee': {
                 'currency': feeCurrency,
@@ -594,6 +667,19 @@ module.exports = class bitstamp extends Exchange {
                 'rate': undefined,
             },
         };
+    }
+
+    parseTransactionStatusByType (status) {
+        // withdrawals:
+        // 0 (open), 1 (in process), 2 (finished), 3 (canceled) or 4 (failed).
+        const statuses = {
+            '0': 'pending', // Open
+            '1': 'pending', // In process
+            '2': 'ok', // Finished
+            '3': 'canceled', // Canceled
+            '4': 'failed', // Failed
+        };
+        return this.safeString (statuses, status, status);
     }
 
     parseOrder (order, market = undefined) {
@@ -785,13 +871,13 @@ module.exports = class bitstamp extends Exchange {
         return { 'url': url, 'method': method, 'body': body, 'headers': headers };
     }
 
-    handleErrors (httpCode, reason, url, method, headers, body) {
+    handleErrors (httpCode, reason, url, method, headers, body, response = undefined) {
         if (typeof body !== 'string')
             return; // fallback to default error handler
         if (body.length < 2)
             return; // fallback to default error handler
         if ((body[0] === '{') || (body[0] === '[')) {
-            let response = JSON.parse (body);
+            response = JSON.parse (body);
             // fetchDepositAddress returns {"error": "No permission found"} on apiKeys that don't have the permission required
             let error = this.safeString (response, 'error');
             let exceptions = this.exceptions;

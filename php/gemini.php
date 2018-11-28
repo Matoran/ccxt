@@ -86,7 +86,7 @@ class gemini extends Exchange {
         ));
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $markets = $this->publicGetSymbols ();
         $result = array ();
         for ($p = 0; $p < count ($markets); $p++) {
@@ -446,6 +446,7 @@ class gemini extends Exchange {
         return array (
             'currency' => $code,
             'address' => $address,
+            'tag' => null,
             'info' => $response,
         );
     }

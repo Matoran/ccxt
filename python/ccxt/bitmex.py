@@ -8,6 +8,8 @@ import json
 from ccxt.base.errors import ExchangeError
 from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
+from ccxt.base.errors import BadRequest
+from ccxt.base.errors import InvalidOrder
 from ccxt.base.errors import OrderNotFound
 from ccxt.base.errors import DDoSProtection
 from ccxt.base.errors import ExchangeNotAvailable
@@ -141,6 +143,7 @@ class bitmex (Exchange):
                 'exact': {
                     'Invalid API Key.': AuthenticationError,
                     'Access Denied': PermissionDenied,
+                    'Duplicate clOrdID': InvalidOrder,
                 },
                 'broad': {
                     'overloaded': ExchangeNotAvailable,
@@ -151,7 +154,7 @@ class bitmex (Exchange):
             },
         })
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         markets = self.publicGetInstrumentActiveAndIndices()
         result = []
         for p in range(0, len(markets)):
@@ -548,22 +551,25 @@ class bitmex (Exchange):
             'id': response['transactID'],
         }
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         if code == 429:
             raise DDoSProtection(self.id + ' ' + body)
         if code >= 400:
             if body:
                 if body[0] == '{':
                     response = json.loads(body)
-                    message = self.safe_string(response, 'error')
+                    error = self.safe_value(response, 'error', {})
+                    message = self.safe_string(error, 'message')
                     feedback = self.id + ' ' + body
                     exact = self.exceptions['exact']
-                    if code in exact:
-                        raise exact[code](feedback)
+                    if message in exact:
+                        raise exact[message](feedback)
                     broad = self.exceptions['broad']
                     broadKey = self.findBroadlyMatchedKey(broad, message)
                     if broadKey is not None:
                         raise broad[broadKey](feedback)
+                    if code == 400:
+                        raise BadRequest(feedback)
                     raise ExchangeError(feedback)  # unknown message
 
     def nonce(self):

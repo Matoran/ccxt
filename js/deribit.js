@@ -82,7 +82,7 @@ module.exports = class deribit extends Exchange {
         });
     }
 
-    async fetchMarkets () {
+    async fetchMarkets (params = {}) {
         let marketsResponse = await this.publicGetGetinstruments ();
         let markets = marketsResponse['result'];
         let result = [];
@@ -138,7 +138,7 @@ module.exports = class deribit extends Exchange {
         return {
             'currency': 'BTC',
             'address': account['depositAddress'],
-            'status': 'ok',
+            'tag': undefined,
             'info': account,
         };
     }

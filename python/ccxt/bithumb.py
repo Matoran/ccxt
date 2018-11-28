@@ -80,7 +80,7 @@ class bithumb (Exchange):
             },
         })
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         markets = self.publicGetTickerAll()
         currencies = list(markets['data'].keys())
         result = []
@@ -340,7 +340,7 @@ class bithumb (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:

@@ -241,7 +241,7 @@ class cobinhood (Exchange):
             }
         return result
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         response = await self.publicGetMarketTradingPairs()
         markets = response['result']['trading_pairs']
         result = []
@@ -589,14 +589,20 @@ class cobinhood (Exchange):
     async def create_deposit_address(self, code, params={}):
         await self.load_markets()
         currency = self.currency(code)
-        response = await self.privatePostWalletDepositAddresses({
+        # 'ledger_type' is required, see: https://cobinhood.github.io/api-public/#create-new-deposit-address
+        ledgerType = self.safe_string(params, 'ledger_type', 'exchange')
+        request = {
             'currency': currency['id'],
-        })
+            'ledger_type': ledgerType,
+        }
+        response = await self.privatePostWalletDepositAddresses(self.extend(request, params))
         address = self.safe_string(response['result']['deposit_address'], 'address')
+        tag = self.safe_string(response['result']['deposit_address'], 'memo')
         self.check_address(address)
         return {
             'currency': code,
             'address': address,
+            'tag': tag,
             'info': response,
         }
 
@@ -747,7 +753,7 @@ class cobinhood (Exchange):
             body = self.json(query)
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         if code < 400 or code >= 600:
             return
         if body[0] != '{':

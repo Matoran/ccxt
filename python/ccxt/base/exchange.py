@@ -4,7 +4,7 @@
 
 # -----------------------------------------------------------------------------
 
-__version__ = '1.17.457'
+__version__ = '1.17.545'
 
 # -----------------------------------------------------------------------------
 
@@ -236,6 +236,8 @@ class Exchange(object):
     last_http_response = None
     last_json_response = None
     last_response_headers = None
+
+    requiresWeb3 = False
     web3 = None
 
     commonCurrencies = {
@@ -298,7 +300,7 @@ class Exchange(object):
         self.session = self.session if self.session else Session()
         self.logger = self.logger if self.logger else logging.getLogger(__name__)
 
-        if Web3 and not self.web3:
+        if self.requiresWeb3 and Web3 and not self.web3:
             # self.web3 = w3 if w3 else Web3(HTTPProvider())
             self.web3 = Web3(HTTPProvider())
 
@@ -380,7 +382,7 @@ class Exchange(object):
                 return key
         return None
 
-    def handle_errors(self, code, reason, url, method, headers, body):
+    def handle_errors(self, code, reason, url, method, headers, body, response=None):
         pass
 
     def prepare_request_headers(self, headers=None):
@@ -1010,13 +1012,13 @@ class Exchange(object):
         self.currencies_by_id = self.index_by(list(self.currencies.values()), 'id')
         return self.markets
 
-    def load_markets(self, reload=False):
+    def load_markets(self, reload=False, params={}):
         if not reload:
             if self.markets:
                 if not self.markets_by_id:
                     return self.set_markets(self.markets)
                 return self.markets
-        markets = self.fetch_markets()
+        markets = self.fetch_markets(params)
         currencies = None
         if self.has['fetchCurrencies']:
             currencies = self.fetch_currencies()
@@ -1048,7 +1050,7 @@ class Exchange(object):
         self.fees = self.deep_extend(self.fees, fetched_fees)
         return self.fees
 
-    def fetch_markets(self):
+    def fetch_markets(self, params={}):
         # markets are returned as a list
         # currencies are returned as a dict
         # this is for historical reasons

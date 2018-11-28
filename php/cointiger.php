@@ -121,7 +121,7 @@ class cointiger extends huobipro {
         ));
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $response = $this->v2publicGetCurrencys ();
         //
         //     {
@@ -403,6 +403,17 @@ class cointiger extends huobipro {
             'limit' => $limit,
         ), $params));
         return $this->parse_trades($response['data']['list'], $market, $since, $limit);
+    }
+
+    public function parse_ohlcv ($ohlcv, $market = null, $timeframe = '1m', $since = null, $limit = null) {
+        return [
+            $ohlcv['id'] * 1000,
+            $ohlcv['open'],
+            $ohlcv['high'],
+            $ohlcv['low'],
+            $ohlcv['close'],
+            $ohlcv['vol'],
+        ];
     }
 
     public function fetch_ohlcv ($symbol, $timeframe = '1m', $since = null, $limit = 1000, $params = array ()) {
@@ -856,7 +867,7 @@ class cointiger extends huobipro {
         return array ( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 
-    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body, $response = null) {
         if (gettype ($body) !== 'string')
             return; // fallback to default error handler
         if (strlen ($body) < 2)

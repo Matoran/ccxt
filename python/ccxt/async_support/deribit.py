@@ -83,7 +83,7 @@ class deribit (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         marketsResponse = await self.publicGetGetinstruments()
         markets = marketsResponse['result']
         result = []
@@ -136,7 +136,7 @@ class deribit (Exchange):
         return {
             'currency': 'BTC',
             'address': account['depositAddress'],
-            'status': 'ok',
+            'tag': None,
             'info': account,
         }
 

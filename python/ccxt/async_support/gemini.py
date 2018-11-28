@@ -88,7 +88,7 @@ class gemini (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         markets = await self.publicGetSymbols()
         result = []
         for p in range(0, len(markets)):
@@ -411,5 +411,6 @@ class gemini (Exchange):
         return {
             'currency': code,
             'address': address,
+            'tag': None,
             'info': response,
         }

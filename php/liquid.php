@@ -84,6 +84,7 @@ class liquid extends Exchange {
             ),
             'skipJsonOnStatusCodes' => [401],
             'exceptions' => array (
+                'API rate limit exceeded. Please retry after 300s' => '\\ccxt\\DDoSProtection',
                 'API Authentication failed' => '\\ccxt\\AuthenticationError',
                 'Nonce is too small' => '\\ccxt\\InvalidNonce',
                 'Order not found' => '\\ccxt\\OrderNotFound',
@@ -163,7 +164,7 @@ class liquid extends Exchange {
         return $result;
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $markets = $this->publicGetProducts ();
         //
         //     array (
@@ -655,6 +656,9 @@ class liquid extends Exchange {
             } else {
                 return;
             }
+        }
+        if ($code === 429) {
+            throw new DDoSProtection ($this->id . ' ' . $body);
         }
         if (!$this->is_json_encoded_object($body)) {
             return; // fallback to default error handler

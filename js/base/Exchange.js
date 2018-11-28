@@ -318,6 +318,8 @@ module.exports = class Exchange {
         this.trades      = {}
         this.transactions = {}
 
+        this.requiresWeb3 = false
+
         this.enableLastJsonResponse = true
         this.enableLastHttpResponse = true
         this.enableLastResponseHeaders = true
@@ -361,8 +363,9 @@ module.exports = class Exchange {
             journal (() => this.journal, this, Object.keys (this.has))
         }
 
-        if (!this.web3 && Web3) {
-            this.web3 = new Web3 (new Web3.providers.HttpProvider ())
+        if (this.requiresWeb3 && !this.web3 && Web3) {
+            const provider = (this.web3ProviderURL) ? new Web3.providers.HttpProvider (this.web3ProviderURL) : new Web3.providers.HttpProvider ()
+            this.web3 = new Web3 (Web3.givenProvider || provider)
         }
     }
 
@@ -570,7 +573,7 @@ module.exports = class Exchange {
         return undefined;
     }
 
-    handleErrors (statusCode, statusText, url, method, responseHeaders, responseBody, json) {
+    handleErrors (statusCode, statusText, url, method, responseHeaders, responseBody, response = undefined) {
         // override me
     }
 
@@ -693,14 +696,14 @@ module.exports = class Exchange {
         return this.markets
     }
 
-    async loadMarkets (reload = false) {
+    async loadMarkets (reload = false, params = {}) {
         if (!reload && this.markets) {
             if (!this.markets_by_id) {
                 return this.setMarkets (this.markets)
             }
             return this.markets
         }
-        const markets = await this.fetchMarkets ()
+        const markets = await this.fetchMarkets (params)
         let currencies = undefined
         if (this.has.fetchCurrencies) {
             currencies = await this.fetchCurrencies ()
@@ -824,7 +827,7 @@ module.exports = class Exchange {
         return new Promise ((resolve, reject) => resolve (this.currencies));
     }
 
-    fetchMarkets () {
+    fetchMarkets (params = {}) {
         // markets are returned as a list
         // currencies are returned as a dict
         // this is for historical reasons
@@ -1008,7 +1011,7 @@ module.exports = class Exchange {
 
         currencies.forEach ((currency) => {
 
-            if (balance[currency].used === undefined) {
+            if (balance[currency].free !== undefined && balance[currency].used === undefined) {
                 // exchange reports only 'free' balance -> try to derive 'used' funds from open orders cache
 
                 if (this.dontGetUsedBalanceFromStaleCache && ('open_orders' in balance['info'])) {

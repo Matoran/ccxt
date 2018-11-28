@@ -218,7 +218,7 @@ class huobipro extends Exchange {
         );
     }
 
-    public function fetch_markets () {
+    public function fetch_markets ($params = array ()) {
         $method = $this->options['fetchMarketsMethod'];
         $response = $this->$method ();
         $markets = $response['data'];
@@ -802,6 +802,7 @@ class huobipro extends Exchange {
         return array (
             'currency' => $code,
             'address' => $address,
+            'tag' => null,
             'info' => $response,
         );
     }
@@ -837,8 +838,9 @@ class huobipro extends Exchange {
             'amount' => $amount,
             'currency' => strtolower ($currency['id']),
         );
-        if ($tag !== null)
+        if ($tag !== null) {
             $request['addr-tag'] = $tag; // only for XRP?
+        }
         $response = $this->privatePostDwWithdrawApiCreate (array_merge ($request, $params));
         $id = null;
         if (is_array ($response) && array_key_exists ('data', $response)) {
@@ -893,7 +895,7 @@ class huobipro extends Exchange {
         return array ( 'url' => $url, 'method' => $method, 'body' => $body, 'headers' => $headers );
     }
 
-    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body) {
+    public function handle_errors ($httpCode, $reason, $url, $method, $headers, $body, $response = null) {
         if (gettype ($body) !== 'string')
             return; // fallback to default error handler
         if (strlen ($body) < 2)

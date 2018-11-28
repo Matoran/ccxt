@@ -38,6 +38,7 @@ class bitso (Exchange):
                 'www': 'https://bitso.com',
                 'doc': 'https://bitso.com/api_info',
                 'fees': 'https://bitso.com/fees?l=es',
+                'referral': 'https://bitso.com/?ref=itej',
             },
             'api': {
                 'public': {
@@ -99,7 +100,7 @@ class bitso (Exchange):
             },
         })
 
-    async def fetch_markets(self):
+    async def fetch_markets(self, params={}):
         markets = await self.publicGetAvailableBooks()
         result = []
         for i in range(0, len(markets['payload'])):
@@ -170,7 +171,9 @@ class bitso (Exchange):
         timestamp = self.parse8601(ticker['created_at'])
         vwap = self.safe_float(ticker, 'vwap')
         baseVolume = self.safe_float(ticker, 'volume')
-        quoteVolume = baseVolume * vwap
+        quoteVolume = None
+        if baseVolume is not None and vwap is not None:
+            quoteVolume = baseVolume * vwap
         last = self.safe_float(ticker, 'last')
         return {
             'symbol': symbol,
@@ -453,7 +456,7 @@ class bitso (Exchange):
             }
         return {'url': url, 'method': method, 'body': body, 'headers': headers}
 
-    def handle_errors(self, httpCode, reason, url, method, headers, body):
+    def handle_errors(self, httpCode, reason, url, method, headers, body, response=None):
         if not isinstance(body, basestring):
             return  # fallback to default error handler
         if len(body) < 2:
